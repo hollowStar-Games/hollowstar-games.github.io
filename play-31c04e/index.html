@@ -476,6 +476,362 @@ body.revealing .screen, body.revealing .screen *, body.revealing #toast { visibi
 
 <script>
 const IS_TEST = false;
+// ===== Echo translations. English is written in the code; this layer swaps visible text for the
+// player's language. Text nodes and a few attributes are translated as they appear (MutationObserver),
+// numbers are matched generically ("{n} of {n} stars"), and "A · B" labels are translated per part.
+// Language: Settings choice saved in localStorage "echo.lang" (auto / en / de); auto follows the phone.
+const I18N = (() => {
+  let choice = "auto";
+  try { choice = localStorage.getItem("echo.lang") || "auto"; } catch (e) {}
+  const phone = ((navigator.languages && navigator.languages[0]) || navigator.language || "en").toLowerCase();
+  const lang = choice === "auto" ? (phone.startsWith("de") ? "de" : "en") : choice;
+
+  const ROMAN = ["I", "II", "III", "IV", "V"];
+  const SEASON_DE = { Dawn: "Morgenrot", Tide: "Gezeiten", Hollow: "Leere", Lattice: "Gitter", Silence: "Stille", Daily: "Tagesrätsel", Prologue: "Prolog", Tutorial: "Tutorial" };
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const MONATE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+
+  const DE = {
+    // ---- brand, intro, welcome
+    "Echo": "Echo", "ECHO": "ECHO", "Echo Test": "Echo Test",
+    "Every step echoes": "Jeder Schritt hallt nach", "Every step echoes.": "Jeder Schritt hallt nach.",
+    "Every echo opens a door.": "Jedes Echo öffnet eine Tür.",
+    "A Hollow Star game": "Ein Hollow-Star-Spiel", "Echo, a Hollow Star game": "Echo, ein Hollow-Star-Spiel",
+    "WELCOME TO ECHO": "WILLKOMMEN BEI ECHO",
+    "A puzzle about teaming up with your past self. A short Prologue teaches you everything, one idea at a time. It takes about {n} minutes.": "Ein Rätselspiel, in dem du mit deinem früheren Ich zusammenarbeitest. Ein kurzer Prolog bringt dir alles bei, eine Idee nach der anderen. Das dauert etwa {n} Minuten.",
+    "Start the Prologue": "Prolog starten", "I've played before": "Ich habe schon gespielt",
+    "Prologue skipped. You can replay it any time from Settings.": "Prolog übersprungen. Du kannst ihn jederzeit in den Einstellungen nachholen.",
+    "A NEW JOURNEY": "EINE NEUE REISE", "Echo {n}.{n}": "Echo {n}.{n}",
+    "Echo now has a guided Prologue and five seasons, each with its own sky, music and a brand new mechanic. Levels are harder and smarter.": "Echo hat jetzt einen geführten Prolog und fünf Saisons, jede mit eigenem Himmel, eigener Musik und einer ganz neuen Mechanik. Die Level sind schwieriger und cleverer.",
+    "Your progress moved with you: you continue at": "Dein Fortschritt kommt mit: Du machst weiter bei",
+    ". Shards, styles, hints, awards and streaks are all kept.": ". Splitter, Stile, Tipps, Auszeichnungen und Serien bleiben erhalten.",
+    "Let's go": "Los geht's", "Welcome back": "Willkommen zurück",
+
+    // ---- home
+    "Continue": "Weiter", "Play": "Spielen", "Daily": "Tagesrätsel", "Levels": "Level", "Shop": "Shop", "Awards": "Auszeichnungen",
+    "New puzzle": "Neues Rätsel", "Played": "Gespielt", "Styles": "Stile", "Home": "Start", "Back": "Zurück", "Settings": "Einstellungen",
+    "of {n} stars": "von {n} Sternen", "{n} of {n} stars": "{n} von {n} Sternen",
+    "{n} of {n} stars · new seasons are coming": "{n} von {n} Sternen · neue Saisons kommen bald",
+    "Shards, open shop": "Splitter, Shop öffnen", "Test build": "Testversion", "TEST BUILD": "TESTVERSION",
+    "day streak": "Tage in Folge", "{n} day streak": "{n} Tage in Folge", "{n} day best streak": "Beste Serie: {n} Tage",
+    "{n}-day streak": "{n} Tage in Folge",
+
+    // ---- seasons
+    "Season": "Saison", "Prologue": "Prolog", "PROLOGUE": "PROLOG", "Tutorial": "Tutorial",
+    "Dawn": "Morgenrot", "Tide": "Gezeiten", "Hollow": "Leere", "Lattice": "Gitter", "Silence": "Stille",
+    "DAWN": "MORGENROT", "TIDE": "GEZEITEN", "HOLLOW": "LEERE", "LATTICE": "GITTER", "SILENCE": "STILLE",
+    "Learn to walk with your echoes.": "Lerne, mit deinen Echos zu gehen.",
+    "First light over quiet doors. Everything you learned, now it gets interesting.": "Erstes Licht über stillen Türen. Alles, was du gelernt hast – jetzt wird es spannend.",
+    "The sea keeps its own time.": "Das Meer hat seinen eigenen Takt.",
+    "Where the ground remembers every step.": "Wo der Boden sich an jeden Schritt erinnert.",
+    "Everything is connected.": "Alles ist verbunden.",
+    "Even echoes fade, here.": "Hier verblassen sogar Echos.",
+    "A new season": "Eine neue Saison", "New mechanic": "Neue Mechanik", "Ahead": "Was dich erwartet", "New": "Neu",
+    "Harder combinations": "Schwierigere Kombinationen",
+    "More plates, more doors, and echoes that must pass at just the right moment.": "Mehr Druckplatten, mehr Türen und Echos, die genau im richtigen Moment vorbeikommen müssen.",
+    "Tide gates": "Gezeitentore", "TIDE GATES": "GEZEITENTORE",
+    "They rise and fall every {n} moves. Step on while the tide is down.": "Sie heben und senken sich alle {n} Züge. Betritt sie, wenn die Flut unten ist.",
+    "Crumbling floor": "Bröckelboden", "CRUMBLING FLOOR": "BRÖCKELBODEN",
+    "Cracked tiles break once someone steps off them, you or your echo.": "Rissige Felder brechen, sobald jemand sie verlässt – du oder dein Echo.",
+    "Linked doors": "Verbundene Türen", "LINKED DOORS": "VERBUNDENE TÜREN",
+    "They open only while every plate of their colour is held at once.": "Sie öffnen sich nur, solange alle Druckplatten ihrer Farbe gleichzeitig besetzt sind.",
+    "Silent floor": "Stiller Boden", "SILENT FLOOR": "STILLER BODEN",
+    "Echoes fade away on it. You can cross it, they can't follow.": "Echos verblassen darauf. Du kannst ihn überqueren, sie können dir nicht folgen.",
+    "SEASON COMPLETE": "SAISON GESCHAFFT", "PROLOGUE COMPLETE": "PROLOG GESCHAFFT", "Prologue complete": "Prolog geschafft",
+    "ALL CLEAR": "ALLES GESCHAFFT", "All seasons cleared": "Alle Saisons geschafft",
+    "You walked every season with your echoes. New seasons are on their way. Until then, chase {n} stars and keep your daily streak.": "Du bist mit deinen Echos durch alle Saisons gegangen. Neue Saisons sind unterwegs. Bis dahin: Jag die {n} Sterne und halte deine Tagesserie.",
+    "+{n} · thank you for playing": "+{n} · danke fürs Spielen",
+    "+{n} hint · a gift for the road": "+{n} Tipp · ein Geschenk für unterwegs",
+    "+{n} hints · a gift for the road": "+{n} Tipps · ein Geschenk für unterwegs",
+    "Locked": "Gesperrt", "locked": "gesperrt", ", locked": ", gesperrt", ", skipped": ", übersprungen",
+    "Level {n}": "Level {n}",
+
+    // ---- prologue level names and guides
+    "First Steps": "Erste Schritte", "Hold the Door": "Halt die Tür", "Patience": "Geduld", "Two Keys": "Zwei Schlüssel",
+    "Passing Shadow": "Vorbeiziehender Schatten", "Relay": "Staffellauf", "Crowd": "Gedränge", "Lockstep": "Gleichschritt",
+    "Rising Tide": "Steigende Flut", "Cracked Path": "Rissiger Pfad", "Two Hands": "Zwei Hände", "Hush": "Psst",
+    "Swipe anywhere to move: up, down, left or right. Follow the arrows to the glowing exit.": "Wische irgendwo, um dich zu bewegen: hoch, runter, links oder rechts. Folge den Pfeilen zum leuchtenden Ausgang.",
+    "A door opens only while someone stands on the plate with the same colour and shape. Walk onto the pink plate.": "Eine Tür öffnet sich nur, solange jemand auf der Druckplatte mit derselben Farbe und Form steht. Geh auf die rosa Platte.",
+    "A door opens only while someone stands on the plate with the same color and shape.": "Eine Tür öffnet sich nur, solange jemand auf der Druckplatte mit derselben Farbe und Form steht.",
+    "See the door open? Now tap Echo. Time rewinds, and a copy of you will replay the steps you just took.": "Siehst du, wie die Tür aufgeht? Tippe jetzt auf Echo. Die Zeit spult zurück, und eine Kopie von dir wiederholt die Schritte, die du gerade gemacht hast.",
+    "Your echo walks back onto the plate and holds the door open. Walk through to the exit.": "Dein Echo geht zurück auf die Platte und hält die Tür offen. Geh hindurch zum Ausgang.",
+    "This plate is far from its door. Walk onto the plate first.": "Diese Platte ist weit von ihrer Tür entfernt. Geh zuerst auf die Platte.",
+    "Tap Echo to record that walk.": "Tippe auf Echo, um diesen Weg aufzunehmen.",
+    "Your echo needs a few steps to get back to the plate. Take one step toward the door.": "Dein Echo braucht ein paar Schritte zurück zur Platte. Mach einen Schritt in Richtung Tür.",
+    "The door is still shut. Tap Stay to stand still while your echo walks. Each Stay counts as a move.": "Die Tür ist noch zu. Tippe auf Warten, um stehen zu bleiben, während dein Echo läuft. Jedes Warten zählt als Zug.",
+    "Your echo is on the plate and the door is open. Go!": "Dein Echo steht auf der Platte und die Tür ist offen. Los!",
+    "Two doors, two plates. Walk to the left plate and tap Echo.": "Zwei Türen, zwei Platten. Geh zur linken Platte und tippe auf Echo.",
+    "Echo {n} will hold the left plate. Now walk to the right plate and tap Echo again.": "Echo {n} hält die linke Platte. Geh jetzt zur rechten Platte und tippe noch einmal auf Echo.",
+    "Both echoes are walking back to their plates. Tap Stay until both doors are open.": "Beide Echos laufen zurück zu ihren Platten. Tippe auf Warten, bis beide Türen offen sind.",
+    "Both plates are held. Walk down to the exit.": "Beide Platten sind besetzt. Geh runter zum Ausgang.",
+    "Your echo can open a door just by walking over its plate. Time your steps so you pass each door at that moment. Stuck? Hints are free in the Prologue.": "Dein Echo kann eine Tür schon öffnen, indem es über ihre Platte läuft. Plane deine Schritte so, dass du genau in diesem Moment an der Tür bist. Feststecken? Im Prolog sind Tipps kostenlos.",
+    "An echo walks exactly where you walked, even through doors that are closed now. Let your first echo open the way for your second.": "Ein Echo läuft genau dort, wo du gelaufen bist, sogar durch Türen, die jetzt zu sind. Lass dein erstes Echo den Weg für dein zweites öffnen.",
+    "Three plates, three doors. You'll need every echo.": "Drei Platten, drei Türen. Du brauchst jedes Echo.",
+    "Final test! You can't stand inside a door that's about to close. Move in step with your echoes.": "Letzte Prüfung! Du kannst nicht in einer Tür stehen, die gleich zugeht. Bewege dich im Takt mit deinen Echos.",
+    "Tide gates rise and fall every {n} moves. You can only step onto a gate while it's down. Tap Stay to wait for the tide.": "Gezeitentore heben und senken sich alle {n} Züge. Du kannst ein Tor nur betreten, wenn es unten ist. Tippe auf Warten, um auf die Flut zu warten.",
+    "Gates rise and fall every {n} moves. You can only step on one while the tide is down. Tap Stay to wait for it.": "Tore heben und senken sich alle {n} Züge. Du kannst eins nur betreten, wenn die Flut unten ist. Tippe auf Warten, um darauf zu warten.",
+    "Cracked floor crumbles as soon as someone steps off it, you or your echo. Cross it before your echo does.": "Rissiger Boden zerbröckelt, sobald jemand ihn verlässt – du oder dein Echo. Überquere ihn vor deinem Echo.",
+    "Cracked floor breaks once someone steps off it, you or your echo. Plan who crosses first.": "Rissiger Boden bricht, sobald jemand ihn verlässt – du oder dein Echo. Plane, wer zuerst hinübergeht.",
+    "A linked door opens only while every plate of its colour is held at the same time.": "Eine verbundene Tür öffnet sich nur, solange alle Platten ihrer Farbe gleichzeitig besetzt sind.",
+    "Linked door: every plate of this colour must be held at once.": "Verbundene Tür: Alle Platten dieser Farbe müssen gleichzeitig besetzt sein.",
+    "Echoes fade away on silent floor. You can walk across it, but your echo can't follow you through.": "Echos verblassen auf stillem Boden. Du kannst darüber gehen, aber dein Echo kann dir nicht folgen.",
+    "Go left {n}, then tap Echo. Your echo will replay these steps and stay where you stopped.": "Geh {n} nach links und tippe dann auf Echo. Dein Echo wiederholt diese Schritte und bleibt dort stehen, wo du aufgehört hast.",
+    "Your echo will replay these steps and stay where you stopped.": "Dein Echo wiederholt diese Schritte und bleibt dort stehen, wo du aufgehört hast.",
+    "That's off the path. Tap Undo to step back, or Restart.": "Das ist nicht der Weg. Tippe auf Zurück, um einen Schritt zurückzugehen, oder starte neu.",
+    "Rewound to your last correct move.": "Zurückgespult zu deinem letzten richtigen Zug.",
+    "Your echo is still on its way. Tap Stay until the door opens.": "Dein Echo ist noch unterwegs. Tippe auf Warten, bis die Tür aufgeht.",
+    "That takes you through the open doors to the exit.": "Damit gehst du durch die offenen Türen zum Ausgang.",
+    "Use another hint for the next part.": "Nimm einen weiteren Tipp für den nächsten Teil.",
+    "Hints are free in the Prologue.": "Im Prolog sind Tipps kostenlos.",
+    "Move first, then echo.": "Erst bewegen, dann Echo.",
+    "Not yet. Tap Stay once first.": "Noch nicht. Tippe zuerst einmal auf Warten.",
+    "Not yet. Tap Stay {n} times first.": "Noch nicht. Tippe zuerst {n}-mal auf Warten.",
+    "ECHO HERE": "HIER ECHO", "STAY ×{n}": "WARTEN ×{n}",
+
+    // ---- game screen
+    "Undo": "Zurück", "Undo (Z)": "Zurück (Z)", "Restart": "Neustart", "Restart (R)": "Neustart (R)",
+    "Echo (E)": "Echo (E)", "Stay": "Warten", "Stay (Space)": "Warten (Leertaste)", "Hint": "Tipp", "Hints": "Tipps", "Skip": "Überspringen",
+    "Moves": "Züge", "Time": "Zeit", "Echoes": "Echos", "Echo {n}": "Echo {n}", "· Target": "· Ziel", "Target": "Ziel",
+    "Game board. Swipe or use arrow keys to move.": "Spielfeld. Wische oder nutze die Pfeiltasten, um dich zu bewegen.",
+    "Echo {n} recorded. Back to the start.": "Echo {n} aufgenommen. Zurück zum Start.",
+    "No echoes left. Undo or restart.": "Keine Echos mehr übrig. Geh zurück oder starte neu.",
+    "Locked. Someone has to stand on the matching plate.": "Gesperrt. Jemand muss auf der passenden Platte stehen.",
+    "This door closes next moment. Step out first.": "Diese Tür geht gleich zu. Geh zuerst hinaus.",
+    "The tide is in. Tap Stay until the gate goes down.": "Die Flut ist oben. Tippe auf Warten, bis das Tor sich senkt.",
+    "The tide rises next move. Step off the gate first.": "Die Flut steigt im nächsten Zug. Verlasse zuerst das Tor.",
+    "That floor has crumbled away.": "Dieser Boden ist zerbröckelt.",
+    "Picked up where you left off. Tap Restart for a fresh try.": "Weiter, wo du aufgehört hast. Tippe auf Neustart für einen frischen Versuch.",
+    "Perfect": "Perfekt", "Precise": "Präzise", "Not quite": "Fast", "COMPLETE": "GESCHAFFT", "DAILY SOLVED": "TAGESRÄTSEL GELÖST",
+    "{n} moves · target {n}": "{n} Züge · Ziel {n}", "Next level": "Nächstes Level", "Replay": "Nochmal", "Back to levels": "Zurück zu den Leveln",
+    "Share": "Teilen", "Today's ranking": "Heutige Rangliste", "Next": "Weiter", "Done": "Fertig", "Finish": "Fertig", "Close": "Schließen", "Cancel": "Abbrechen",
+    "NEED A HAND?": "BRAUCHST DU HILFE?", "Show next moves": "Nächste Züge zeigen", "Free hint": "Gratis-Tipp", "Buy a hint": "Tipp kaufen",
+    "Skip this level": "Level überspringen", "SKIP LEVEL?": "LEVEL ÜBERSPRINGEN?", "Move on now and solve it later.": "Mach jetzt weiter und löse es später.",
+    "Uses {n} of your {n} skips. The level stays open to solve later.": "Verbraucht {n} von deinen {n}× Überspringen. Das Level bleibt offen, du kannst es später lösen.",
+    "Level {n} skipped. You can come back any time.": "Level {n} übersprungen. Du kannst jederzeit zurückkommen.",
+    "No skips left. Get more in the shop.": "Kein Überspringen mehr übrig. Hol dir mehr im Shop.",
+    "More hints in the store": "Mehr Tipps im Shop",
+    "Watch a short video · {n} left today": "Kurzes Video ansehen · heute noch {n}",
+    "Get {n} free hint · {n} left today": "{n} Gratis-Tipp holen · heute noch {n}",
+    "Watch a video": "Video ansehen", "No more free videos today.": "Heute keine Gratis-Videos mehr.",
+    "No video is available right now. Try again in a little while.": "Gerade ist kein Video verfügbar. Versuch es gleich noch einmal.",
+    "Watch the whole video to get the reward.": "Sieh dir das ganze Video an, um die Belohnung zu bekommen.",
+    "Video ad plays here": "Hier läuft die Videowerbung", "Sponsored": "Gesponsert", "Reward in {n}s": "Belohnung in {n} s", "Reward earned": "Belohnung erhalten", "Claim": "Abholen",
+    "Draws your next steps on the board, up to the next echo.": "Zeichnet deine nächsten Schritte aufs Feld, bis zum nächsten Echo.",
+    "Staying still gives your echoes time to reach their plates and open the doors. Each Stay counts as a move.": "Stehenbleiben gibt deinen Echos Zeit, ihre Platten zu erreichen und die Türen zu öffnen. Jedes Warten zählt als Zug.",
+    "Staying still lets the tide fall and gives your echoes time to reach their plates. Each Stay counts as a move.": "Stehenbleiben lässt die Flut sinken und gibt deinen Echos Zeit, ihre Platten zu erreichen. Jedes Warten zählt als Zug.",
+
+    // ---- level select
+    "Tutorial · {n} of {n}": "Tutorial · {n} von {n}", "Finish the Prologue to open": "Schaffe den Prolog, um es zu öffnen",
+    "Season I": "Saison I",
+
+    // ---- daily
+    "Daily #{n}": "Tagesrätsel #{n}", "Daily #{n} · solved": "Tagesrätsel #{n} · gelöst", "Daily #{n} · {n} day streak": "Tagesrätsel #{n} · {n} Tage in Folge",
+    "Today's daily": "Heutiges Rätsel", "Next in {n}h {n}m": "Nächstes in {n} h {n} min", "Stars": "Sterne", "Best streak": "Beste Serie", "Total stars": "Sterne gesamt",
+    "Your {n}-day streak is safe": "Deine Serie von {n} Tagen ist sicher", "{n} streak freezes used": "{n} Serienschutz verbraucht", "Streak freeze used": "Serienschutz verbraucht",
+    "{n} more days to your {n}-day reward": "Noch {n} Tage bis zu deiner {n}-Tage-Belohnung", "{n} more day to your {n}-day reward": "Noch {n} Tag bis zu deiner {n}-Tage-Belohnung",
+    "Streak freeze": "Serienschutz", "You have {n} of {n}. Saves your daily streak if you miss a day.": "Du hast {n} von {n}. Rettet deine Tagesserie, wenn du einen Tag verpasst.",
+    "Leaderboards · Google Play Games": "Ranglisten · Google Play Games", "Compete with other players": "Tritt gegen andere Spieler an",
+    "Sign in with Google Play Games to see the daily, star and streak rankings.": "Melde dich bei Google Play Games an, um die Ranglisten für Tagesrätsel, Sterne und Serien zu sehen.",
+    "DAILY REMINDER": "TÄGLICHE ERINNERUNG",
+    "Want a gentle reminder when a new puzzle is ready? One a day at {n}:{n}, never more. You can change it in Settings.": "Möchtest du eine sanfte Erinnerung, wenn ein neues Rätsel bereit ist? Eine pro Tag um {n}:{n} Uhr, nie mehr. Du kannst das in den Einstellungen ändern.",
+    "Remind me": "Erinnere mich", "Not now": "Jetzt nicht", "Daily reminder set for {n}:{n}": "Tägliche Erinnerung für {n}:{n} Uhr eingestellt",
+    "Notifications are off for Echo. You can allow them in your phone's settings.": "Benachrichtigungen sind für Echo aus. Du kannst sie in den Einstellungen deines Handys erlauben.",
+    "Copied. Paste it anywhere to share.": "Kopiert. Füge es irgendwo ein, um es zu teilen.",
+
+    // ---- share and notifications (not on screen)
+    "{n} moves (target {n})": "{n} Züge (Ziel {n})",
+    "I'm playing Echo, a calm puzzle game where you team up with your past self 🌌": "Ich spiele Echo, ein ruhiges Rätselspiel, in dem du mit deinem früheren Ich zusammenarbeitest 🌌",
+    "Today's puzzle is ready 🌙": "Das heutige Rätsel ist bereit 🌙", "Your echoes are waiting ✨": "Deine Echos warten ✨",
+    "A new daily puzzle has arrived": "Ein neues Tagesrätsel ist da", "One small puzzle for today 🌌": "Ein kleines Rätsel für heute 🌌",
+    "Keep your {n}-day streak 🔥": "Halte deine Serie von {n} Tagen 🔥", "Daily #{n} is ready. One puzzle keeps it going.": "Tagesrätsel #{n} ist bereit. Ein Rätsel hält sie am Leben.",
+    "Echo · Daily #{n}": "Echo · Tagesrätsel #{n}",
+
+    // ---- awards
+    "Award unlocked": "Auszeichnung freigeschaltet", "Awards & stats": "Auszeichnungen & Statistik", "Awards · {n} of {n}": "Auszeichnungen · {n} von {n}",
+    "Earned": "Erhalten", "Profile": "Profil", "Unaided": "Ohne Hilfe",
+    "First Light": "Erstes Licht", "Hello, Me": "Hallo, ich", "Choir": "Chor", "Immaculate": "Makellos", "Constellation": "Sternbild",
+    "Graduate": "Absolvent", "Ritual": "Ritual", "Devoted": "Hingebungsvoll", "Faithful": "Treu", "Eternal": "Ewig", "Collector": "Sammler", "Curator": "Kurator",
+    "Clear your first level": "Schaffe dein erstes Level", "Record your first echo": "Nimm dein erstes Echo auf", "Use three echoes in one level": "Nutze drei Echos in einem Level",
+    "Earn {n} stars on {n} levels": "Hol {n} Sterne in {n} Leveln", "Collect {n} stars · unlocks Prism echoes": "Sammle {n} Sterne · schaltet Prisma-Echos frei",
+    "Finish the Prologue": "Schaffe den Prolog",
+    "Clear every level of Season I": "Schaffe jedes Level von Saison I", "Clear every level of Season II · unlocks Comet orb": "Schaffe jedes Level von Saison II · schaltet die Kometen-Kugel frei",
+    "Clear every level of Season III · unlocks Aurora board": "Schaffe jedes Level von Saison III · schaltet das Polarlicht-Brett frei",
+    "Clear every level of Season IV": "Schaffe jedes Level von Saison IV", "Clear every level of Season V · unlocks Black Hole orb": "Schaffe jedes Level von Saison V · schaltet die Schwarzes-Loch-Kugel frei",
+    "Solve a daily puzzle": "Löse ein Tagesrätsel", "Reach a {n}-day daily streak": "Erreiche eine Tagesserie von {n} Tagen",
+    "Reach a {n}-day streak · unlocks Phoenix orb": "Erreiche eine Serie von {n} Tagen · schaltet die Phönix-Kugel frei",
+    "Reach a {n}-day streak · unlocks Eternal orb": "Erreiche eine Serie von {n} Tagen · schaltet die Ewige Kugel frei",
+    "Clear {n} levels without a hint": "Schaffe {n} Level ohne Tipp", "Own {n} styles": "Besitze {n} Stile",
+    "+{n} shards": "+{n} Splitter", "{n} levels · {n} stars": "{n} Level · {n} Sterne",
+
+    // ---- shop
+    "Styles & boosts": "Stile & Extras", "Store": "Shop", "Boosts": "Extras", "Orbs": "Kugeln", "Faces": "Gesichter", "Trails": "Spuren", "Boards": "Bretter",
+    "Premium": "Premium", "Free": "Gratis", "Equip": "Anlegen", "Equipped": "Angelegt", "See pack": "Paket ansehen", "· owned": "· gekauft",
+    "Orbs are you. Your echoes copy your face.": "Die Kugel bist du. Deine Echos übernehmen dein Gesicht.",
+    "Faces sit on your orb and on every echo. Eyes follow your moves.": "Gesichter sitzen auf deiner Kugel und auf jedem Echo. Die Augen folgen deinen Zügen.",
+    "Echo styles change your recorded copies.": "Echo-Stile verändern deine aufgenommenen Kopien.",
+    "Trails follow you as you move.": "Spuren folgen dir, während du dich bewegst.", "Boards change the tiles and the app colors.": "Bretter ändern die Felder und die Farben der App.",
+    "Shown on your orb and on every echo.": "Wird auf deiner Kugel und auf jedem Echo gezeigt.",
+    "Supporter Pack": "Unterstützer-Paket", "{n} Hints": "{n} Tipps", "{n} Hints + {n} Skips": "{n} Tipps + {n}× Überspringen", "Shard Pouch": "Splitterbeutel",
+    "Eclipse orb, Crown face, Ink echoes, Obsidian board and {n} hints. Helps fund new chapters.": "Finsternis-Kugel, Kronen-Gesicht, Tinten-Echos, Obsidian-Brett und {n} Tipps. Hilft, neue Kapitel zu finanzieren.",
+    "Reveal the next moves on any level.": "Zeigt die nächsten Züge in jedem Level.", "For when a level just won't open.": "Für Level, die einfach nicht aufgehen wollen.",
+    "{n} shards to spend on styles and boosts.": "{n} Splitter für Stile und Extras.",
+    "Every level can be solved without paying. Purchases only save time or add style.": "Jedes Level ist ohne Bezahlen lösbar. Käufe sparen nur Zeit oder bringen Stil.",
+    "You have {n} shards": "Du hast {n} Splitter", "You have {n}. Shows your next moves.": "Du hast {n}. Zeigt deine nächsten Züge.",
+    "You have {n}. Pass a level without solving it.": "Du hast {n}. Überspringe ein Level, ohne es zu lösen.",
+    "{n} hint": "{n} Tipp", "{n} hints": "{n} Tipps", "{n} skip": "{n}× Überspringen", "{n} skips": "{n}× Überspringen", "+{n} hint": "+{n} Tipp", "+{n} hints, +{n} skips": "+{n} Tipps, +{n}× Überspringen",
+    "You already own the Supporter Pack. Thank you!": "Du besitzt das Unterstützer-Paket schon. Danke!",
+    "Demo store. In the Play Store version this button opens Google Play checkout. No money is charged here.": "Demo-Shop. In der Play-Store-Version öffnet dieser Knopf die Google-Play-Kasse. Hier wird kein Geld abgebucht.",
+    "Opening Google Play…": "Google Play wird geöffnet…", "Couldn't reach Google Play. Check your connection.": "Google Play ist nicht erreichbar. Prüfe deine Verbindung.",
+    "Purchases checked with Google Play.": "Käufe mit Google Play abgeglichen.", "Available in the Android app.": "In der Android-App verfügbar.",
+    "Purchases are tied to your Google account in the Play Store version.": "In der Play-Store-Version sind Käufe an dein Google-Konto gebunden.",
+    // style names
+    "Abyss": "Abgrund", "Aurora": "Polarlicht", "Black Hole": "Schwarzes Loch", "Cat": "Katze", "Comet Tail": "Kometenschweif", "Comet": "Komet", "Crescent": "Mondsichel",
+    "Crown": "Krone", "Crystal": "Kristall", "Cyclops": "Zyklop", "Eclipse": "Finsternis", "Ember": "Glut", "Galaxy": "Galaxie", "Ghost": "Geist", "Glass": "Glas",
+    "Heart": "Herz", "Hearth": "Kaminfeuer", "Hearts": "Herzen", "Ink": "Tinte", "Jade": "Jade", "Joy": "Freude", "Mist": "Nebel", "Monogram": "Monogramm", "Moon": "Mond",
+    "Nebula Glass": "Nebelglas", "Night": "Nacht", "None": "Keine", "Nova": "Nova", "Obsidian": "Obsidian", "Pearl": "Perle", "Phoenix": "Phönix", "Plain": "Schlicht",
+    "Prism": "Prisma", "Ribbon": "Band", "Rose Gold": "Roségold", "Sakura": "Sakura", "Saturn": "Saturn", "Shades": "Sonnenbrille", "Sleepy": "Verschlafen", "Smile": "Lächeln",
+    "Spark": "Funke", "Stardust": "Sternenstaub", "Starlight": "Sternenlicht", "Starlit": "Sternenklar", "Starry": "Sternig", "Sun": "Sonne", "Terra": "Terra", "Void Glass": "Leerenglas", "Wink": "Zwinkern",
+
+    // ---- settings
+    "Sound": "Ton", "Sound effects": "Soundeffekte", "Volume": "Lautstärke", "Ambient music": "Hintergrundmusik",
+    "Soft music box melodies that change with each season": "Sanfte Spieluhr-Melodien, die sich mit jeder Saison ändern",
+    "Vibration": "Vibration", "Short buzz on blocked moves and purchases": "Kurzes Summen bei blockierten Zügen und Käufen",
+    "Gameplay": "Spiel", "Show echo routes": "Echo-Wege zeigen", "Dots mark where each echo will step next": "Punkte zeigen, wohin jedes Echo als Nächstes tritt",
+    "Show move counter": "Zugzähler zeigen", "Swipe sensitivity": "Wisch-Empfindlichkeit", "Low": "Niedrig", "Normal": "Normal", "High": "Hoch",
+    "Left-handed controls": "Linkshänder-Steuerung", "Mirrors the button row": "Spiegelt die Knopfleiste",
+    "Display": "Anzeige", "High contrast": "Hoher Kontrast", "Brighter doors, plates and outlines": "Hellere Türen, Platten und Umrisse",
+    "Reduce motion": "Weniger Bewegung", "Fewer animations and ripples": "Weniger Animationen und Wellen",
+    "Language": "Sprache", "Auto": "Automatisch",
+    "Daily reminder": "Tägliche Erinnerung", "One gentle note a day when a new puzzle is ready. Never more.": "Eine sanfte Nachricht pro Tag, wenn ein neues Rätsel bereit ist. Nie mehr.",
+    "Reminders": "Erinnerungen",
+    "Help": "Hilfe", "How to play": "So wird gespielt", "The rules and every mechanic you've met": "Die Regeln und jede Mechanik, die du kennst",
+    "Replay the Prologue": "Prolog wiederholen", "The guided tutorial levels": "Die geführten Tutorial-Level",
+    "Restore purchases": "Käufe wiederherstellen", "Re-applies purchases on a new phone": "Überträgt Käufe auf ein neues Handy",
+    "Privacy policy": "Datenschutz", "What Echo stores and why": "Was Echo speichert und warum",
+    "Ad privacy choices": "Werbe-Datenschutz", "Change your ad consent": "Ändere deine Werbe-Einwilligung",
+    "Rate Echo": "Echo bewerten", "A review helps other players find the game": "Eine Bewertung hilft anderen, das Spiel zu finden",
+    "Share Echo": "Echo teilen", "Send the game to a friend": "Schick das Spiel an einen Freund",
+    "Send feedback": "Feedback senden", "Ideas, bugs, a level that felt unfair? Tell us": "Ideen, Fehler, ein Level, das unfair wirkte? Schreib uns",
+    "Data": "Daten", "Reset progress": "Fortschritt zurücksetzen", "Clears levels, stars and streaks. Purchases stay.": "Löscht Level, Sterne und Serien. Käufe bleiben.",
+    "Your levels, stars, shards, awards and streaks will be cleared. Purchased items stay.": "Deine Level, Sterne, Splitter, Auszeichnungen und Serien werden gelöscht. Gekaufte Sachen bleiben.",
+    "Reset": "Zurücksetzen", "Progress reset": "Fortschritt zurückgesetzt",
+    "Cloud save": "Cloud-Speicher", "CLOUD SAVE": "CLOUD-SPEICHER", "Save now": "Jetzt speichern", "Restore from cloud": "Aus der Cloud laden",
+    "Copy this phone's progress to your Google account": "Den Fortschritt dieses Handys in dein Google-Konto kopieren",
+    "Bring back progress saved on another phone": "Fortschritt von einem anderen Handy zurückholen",
+    "Keep your progress safe and restore it on a new phone": "Sichere deinen Fortschritt und hol ihn auf ein neues Handy",
+    "Sign in": "Anmelden", "Signed in": "Angemeldet", "Sign in with Google Play Games": "Mit Google Play Games anmelden",
+    "Sign in with Google Play Games and your levels, stars and styles are saved to your Google account. On a new phone, they come right back.": "Melde dich bei Google Play Games an, dann werden deine Level, Sterne und Stile in deinem Google-Konto gespeichert. Auf einem neuen Handy sind sie sofort wieder da.",
+    "Google Play Games · last saved just now. Progress saves automatically.": "Google Play Games · gerade eben gespeichert. Der Fortschritt wird automatisch gespeichert.",
+    "Progress saves automatically.": "Der Fortschritt wird automatisch gespeichert.",
+    "No cloud save yet. Your progress will be saved automatically.": "Noch kein Cloud-Speicherstand. Dein Fortschritt wird automatisch gespeichert.",
+    "Progress saved to your Google account.": "Fortschritt in deinem Google-Konto gespeichert.",
+    "Couldn't reach Google Play Games. Try again later.": "Google Play Games ist nicht erreichbar. Versuch es später noch einmal.",
+    "Sign-in was cancelled.": "Anmeldung abgebrochen.", "KEEP YOUR PROGRESS": "BEHALTE DEINEN FORTSCHRITT",
+    "Your Google account has saved progress. Which one do you want to keep?": "Dein Google-Konto hat einen gespeicherten Fortschritt. Welchen möchtest du behalten?",
+    "This phone": "Dieses Handy", "Purchases on this phone are kept either way.": "Käufe auf diesem Handy bleiben so oder so erhalten.",
+    "{n} levels and {n} stars restored": "{n} Level und {n} Sterne wiederhergestellt",
+    "just now": "gerade eben", "{n} min ago": "vor {n} Min.", "{n} h ago": "vor {n} Std.", "{n} days ago": "vor {n} Tagen",
+    "PRIVACY": "DATENSCHUTZ", "Full policy:": "Vollständige Erklärung:",
+    "Echo saves your progress, settings and purchases on this phone. Purchases go through Google Play. Free-hint videos come from Google AdMob, which may use device data for ads if you allow it.": "Echo speichert deinen Fortschritt, deine Einstellungen und Käufe auf diesem Handy. Käufe laufen über Google Play. Die Videos für Gratis-Tipps kommen von Google AdMob, das Gerätedaten für Werbung nutzen kann, wenn du es erlaubst.",
+    "This prototype saves your progress, settings and purchases only in this browser. Nothing is sent anywhere.": "Diese Version speichert deinen Fortschritt, deine Einstellungen und Käufe nur in diesem Browser. Nichts wird irgendwohin gesendet.",
+    "You can also do this later in Settings.": "Du kannst das auch später in den Einstellungen machen.",
+    "version {n}.{n} test build": "Version {n}.{n} Testversion", "version {n}.{n} release build": "Version {n}.{n}",
+    "Prologue + {n} levels in {n} seasons": "Prolog + {n} Level in {n} Saisons", "{n} daily puzzles": "{n} Tagesrätsel",
+    // tester tools
+    "Tester tools": "Testwerkzeuge", "Tester tools · test build only": "Testwerkzeuge · nur in der Testversion",
+    "Add {n} shards": "{n} Splitter hinzufügen", "Add {n} hints and {n} skips": "{n} Tipps und {n}× Überspringen hinzufügen",
+    "You have {n}": "Du hast {n}", "You have {n} hints and {n} skips": "Du hast {n} Tipps und {n}× Überspringen",
+    "Unlock all levels": "Alle Level freischalten", "Marks every level as skipped so all seasons open": "Markiert jedes Level als übersprungen, damit alle Saisons offen sind",
+    "Unlock up to a level": "Bis zu einem Level freischalten", "Pick a season and level; everything before it opens": "Wähle Saison und Level; alles davor wird geöffnet",
+    "UNLOCK UP TO": "FREISCHALTEN BIS", "All levels unlocked": "Alle Level freigeschaltet",
+    "Streak +{n} days": "Serie +{n} Tage", "Pretend you played the last days (to test streak rewards)": "Tu so, als hättest du die letzten Tage gespielt (zum Testen der Serien-Belohnungen)",
+    "Streak set to {n} days": "Serie auf {n} Tage gesetzt",
+    // how-to sheet
+    "How it works": "So funktioniert's", "Swipe to step from tile to tile. Reach the glowing ring to finish.": "Wische, um von Feld zu Feld zu gehen. Erreiche den leuchtenden Ring, um das Level zu schaffen.",
+    "Tap Echo to rewind. A copy of you repeats every step you just took, so it can hold a plate while you walk through.": "Tippe auf Echo, um zurückzuspulen. Eine Kopie von dir wiederholt jeden Schritt, den du gerade gemacht hast, und kann so eine Platte halten, während du durchgehst.",
+    "Tap Stay to stand still for one step. Your echoes keep walking, so this gives them time to reach their plates. Each Stay counts as a move.": "Tippe auf Warten, um einen Schritt lang stehen zu bleiben. Deine Echos laufen weiter, so haben sie Zeit, ihre Platten zu erreichen. Jedes Warten zählt als Zug.",
+    "· fewer moves earn more stars": "· weniger Züge bringen mehr Sterne",
+  };
+
+  // season-numbered phrases
+  ROMAN.forEach((r, k) => {
+    DE[`Season ${r}`] = `Saison ${r}`;
+    DE[`Begin Season ${r}`] = `Saison ${r} beginnen`;
+    DE[`Season ${r} complete`] = `Saison ${r} geschafft`;
+    DE[`Finish Season ${r} to open`] = `Schaffe Saison ${r}, um sie zu öffnen`;
+  });
+  for (const [en, de] of Object.entries(SEASON_DE)) { DE[`New · ${en}`] = `Neu · ${de}`; }
+  MONTHS.forEach((m, k) => { DE[`${m} {n}`] = `{n}. ${MONATE[k]}`; });
+
+  const RULES = [
+    [/^Season ([IVX]+) level (\d+),? locked$/, (m) => `Saison ${m[1]} Level ${m[2]}, gesperrt`],
+    [/^Season ([IVX]+) level (\d+),? (\d+) stars?$/, (m) => `Saison ${m[1]} Level ${m[2]}, ${m[3]} Sterne`],
+    [/^Season ([IVX]+) level (\d+), skipped$/, (m) => `Saison ${m[1]} Level ${m[2]}, übersprungen`],
+    [/^Prologue (.+), locked$/, (m) => `Prolog ${tr(m[1])}, gesperrt`],
+    [/^Season ([IVX]+) level (\d+)$/, (m) => `Saison ${m[1]} Level ${m[2]}`],
+    [/^Prologue (.+), (\d+) stars?$/, (m) => `Prolog ${tr(m[1])}, ${m[2]} Sterne`],
+    [/^Signed in as (.+)$/, (m) => `Angemeldet als ${m[1]}`],
+    [/^(.+) added\. Thank you!$/, (m) => `${tr(m[1])} hinzugefügt. Danke!`],
+    [/^Unlocked up to (.+)$/, (m) => `Freigeschaltet bis ${tr(m[1])}`],
+    [/^Buy · (.+)$/, (m) => `Kaufen · ${m[1]}`],
+    [/^Google Play Games · last saved (.+)\. Progress saves automatically\.$/, (m) => `Google Play Games · zuletzt gespeichert ${tr(m[1])}. Der Fortschritt wird automatisch gespeichert.`],
+  ];
+
+  const NUM = /\d+(?:,\d{3})*/g;
+  const cache = new Map();
+  function fill(tpl, nums) {
+    let k = 0;
+    return tpl.replace(/\{n\}/g, () => { const v = nums[k++] || ""; return v.replace(/,/g, "."); });
+  }
+  function core(s) {
+    if (Object.prototype.hasOwnProperty.call(DE, s)) return DE[s];
+    for (const [re, f] of RULES) { const m = s.match(re); if (m) return f(m); }
+    const nums = s.match(NUM);
+    if (nums) { const key = s.replace(NUM, "{n}"); if (Object.prototype.hasOwnProperty.call(DE, key)) return fill(DE[key], nums); }
+    if (s.includes(" · ")) { const parts = s.split(" · "); const out = parts.map(p => tr(p)); if (out.some((p, i) => p !== parts[i])) return out.join(" · "); }
+    return null;
+  }
+  function tr(s) {
+    if (lang !== "de" || !s || !/[A-Za-z]/.test(s)) return s;
+    if (cache.has(s)) return cache.get(s);
+    const lead = s.match(/^\s*/)[0], trail = s.match(/\s*$/)[0];
+    const body = s.trim().replace(/\s+/g, " ");
+    let out = core(body);
+    out = out == null ? s : lead + out + trail;
+    if (cache.size > 4000) cache.clear();
+    cache.set(s, out);
+    return out;
+  }
+
+  const ATTRS = ["placeholder", "aria-label", "title", "alt", "data-label"];
+  function walk(n) {
+    if (n.nodeType === 3) {
+      const p = n.parentNode; if (!p || p.nodeName === "SCRIPT" || p.nodeName === "STYLE") return;
+      const t = tr(n.data); if (t !== n.data) n.data = t; return;
+    }
+    if (n.nodeType !== 1 || n.nodeName === "SCRIPT" || n.nodeName === "STYLE") return;
+    for (const a of ATTRS) if (n.hasAttribute(a)) { const v = n.getAttribute(a), t = tr(v); if (t !== v) n.setAttribute(a, t); }
+    for (let c = n.firstChild; c; c = c.nextSibling) walk(c);
+  }
+  function start() {
+    if (lang === "en") return;
+    document.documentElement.lang = lang;
+    walk(document.body);
+    new MutationObserver(ms => {
+      for (const m of ms) {
+        if (m.type === "characterData") walk(m.target);
+        else if (m.type === "attributes") walk(m.target);
+        else m.addedNodes.forEach(walk);
+      }
+    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
+  }
+  if (document.body) start(); else document.addEventListener("DOMContentLoaded", start);
+
+  function setChoice(v) { try { localStorage.setItem("echo.lang", v); } catch (e) {} }
+  return { lang, choice, tr, setChoice };
+})();
+const tr = I18N.tr;
+
 // ===== Cosmetics catalogue + shared drawing (board, shop previews) + galaxy sky =====
 // price: number (shards) | 0 default | "ach:<id>" earned | "pack:supporter" premium
 const ORBS = [
@@ -1932,6 +2288,7 @@ const DAILY_DATA = [{"map":["#######","###.E.#","###...#","#b#...#","#.#B###","#
       <div><h4 class="sec label">Display</h4><div class="group panel">
         ${sw("contrast", "High contrast", "Brighter doors, plates and outlines")}
         ${sw("motion", "Reduce motion", "Fewer animations and ripples")}
+        <div class="set"><span class="tx"><strong>Language</strong></span><span class="seg">${[["auto", "Auto"], ["en", "English"], ["de", "Deutsch"]].map(([v, l]) => `<button data-lang="${v}" aria-pressed="${I18N.choice === v}">${l}</button>`).join("")}</span></div>
       </div></div>
       <div><h4 class="sec label">Echo</h4><div class="group panel">
         ${link("sRate", "Rate Echo", "A review helps other players find the game", "i-star")}
@@ -1964,13 +2321,14 @@ const DAILY_DATA = [{"map":["#######","###.E.#","###...#","#b#...#","#.#B###","#
       if (k === "lefty") $("controls").classList.toggle("lefty", S().lefty);
       if (k === "remind") { if (S().remind) enableReminders(true); else scheduleReminders(); }
     });
+    body.querySelectorAll("[data-lang]").forEach(b => b.onclick = () => { if (b.dataset.lang === I18N.choice) return; sfx.tap(); I18N.setChoice(b.dataset.lang); setTimeout(() => location.reload(), 120); });
     body.querySelectorAll("[data-seg]").forEach(b => b.onclick = () => { const k = b.dataset.seg; S()[k] = typeof DEFAULTS.settings[k] === "number" ? +b.dataset.v : b.dataset.v; persist(); sfx.tap(); if (k === "remindAt") scheduleReminders(); renderSettings(); });
     $("vol").oninput = e => { S().vol = +e.target.value; if (master) master.gain.value = S().vol; persist(); };
     $("vol").onchange = () => sfx.step(3);
     $("sHow").onclick = () => onboarding(0);
     $("sPrologue").onclick = () => { sfx.tap(); startLevel(SEASON_IDX[0][0]); };
     $("sRate").onclick = () => { sfx.tap(); if (NATIVE && NATIVE.extras) NATIVE.extras.openStore(); else window.open(STORE_URL, "_blank", "noopener"); };
-    $("sShare").onclick = () => { sfx.tap(); shareText(`I'm playing Echo, a calm puzzle game where you team up with your past self 🌌\n${STORE_URL}`); };
+    $("sShare").onclick = () => { sfx.tap(); shareText(`${tr("I'm playing Echo, a calm puzzle game where you team up with your past self 🌌")}\n${STORE_URL}`); };
     $("sFeedback").onclick = () => { sfx.tap(); sendFeedback(); };
     if ($("cSignIn")) $("cSignIn").onclick = cloudSignIn;
     if ($("cSave")) $("cSave").onclick = () => cloudSaveNow(true);
@@ -2091,7 +2449,7 @@ const DAILY_DATA = [{"map":["#######","###.E.#","###...#","#b#...#","#.#B###","#
     const d = DAILY_DATA[((dayIndex() % DAILY_DATA.length) + DAILY_DATA.length) % DAILY_DATA.length];
     setSeason(DAILY_SEASON);
     $("chapLabel").textContent = save.daily.done[todayKey()] ? `Daily #${dailyNo()} · solved` : `Daily #${dailyNo()} · ${dailyStreak()} day streak`;
-    $("lvlTitle").textContent = new Date().toLocaleDateString(undefined, { month: "long", day: "numeric" });
+    $("lvlTitle").textContent = new Date().toLocaleDateString(I18N.lang === "de" ? "de-AT" : "en-US", { month: "long", day: "numeric" });
     setupBoard(d, restored);
   }
   function resumeGame() { startTimer(); }
@@ -2208,24 +2566,25 @@ const DAILY_DATA = [{"map":["#######","###.E.#","###...#","#b#...#","#.#B###","#
     return cur.sol.slice(done.length, hint.until);
   }
   // plain-language description of the remaining hinted moves
-  const WORD = { U: "up", D: "down", L: "left", R: "right" };
+  const WORD = { U: "up", D: "down", L: "left", R: "right" }, WORT = { U: "nach oben", D: "nach unten", L: "nach links", R: "nach rechts" };
   function describeHint(rem, atEnd) {
     const parts = [];
     for (let i = 0; i < rem.length;) {
       const m = rem[i]; let n = 0; while (rem[i + n] === m) n++;
-      if (m === "X") parts.push("tap Echo");
-      else if (m === "W") parts.push(`tap Stay ${n === 1 ? "once" : n + " times"}`);
-      else parts.push(`go ${WORD[m]}${n > 1 ? " " + n : ""}`);
+      const de = I18N.lang === "de";
+      if (m === "X") parts.push(de ? "tippe auf Echo" : "tap Echo");
+      else if (m === "W") parts.push(de ? `tippe ${n === 1 ? "einmal" : n + "-mal"} auf Warten` : `tap Stay ${n === 1 ? "once" : n + " times"}`);
+      else parts.push(de ? `geh ${n > 1 ? n + " Felder " : ""}${WORT[m]}` : `go ${WORD[m]}${n > 1 ? " " + n : ""}`);
       i += n;
     }
-    let text = parts.join(", ").replace(/, ([^,]*)$/, ", then $1");
+    let text = parts.join(", ").replace(/, ([^,]*)$/, I18N.lang === "de" ? ", dann $1" : ", then $1");
     text = text[0].toUpperCase() + text.slice(1) + ".";
     const why = [];
     if (rem.includes("W")) why.push(lvl.gates.length ? "Staying still lets the tide fall and gives your echoes time to reach their plates. Each Stay counts as a move." : "Staying still gives your echoes time to reach their plates and open the doors. Each Stay counts as a move.");
     if (rem.endsWith("X")) why.push("Your echo will replay these steps and stay where you stopped.");
     else if (atEnd) why.push("That takes you through the open doors to the exit.");
     else why.push("Use another hint for the next part.");
-    return text + " " + why.join(" ");
+    return text + " " + why.map(tr).join(" ");
   }
   const freeHints = () => mode === "level" && seasonOf(li) === 0;
   function useHint() {
@@ -2355,7 +2714,7 @@ const DAILY_DATA = [{"map":["#######","###.E.#","###...#","#b#...#","#.#B###","#
   function dailyShareText(moves, par, stars) {
     const runs = state.echoes.map(e => `🔵${e.length - 1}`).concat([`🟡${state.path.length - 1}`]).join(" ");
     const st = save.daily.streak;
-    return `Echo #${dailyNo()} 🌌\n${"⭐".repeat(stars)}${"☆".repeat(3 - stars)}  ${moves} moves (target ${par})\n${runs}${usedHint ? " · 💡" : ""}\n${st ? `🔥 ${st}-day streak\n` : ""}${STORE_URL}`;
+    return `Echo #${dailyNo()} 🌌\n${"⭐".repeat(stars)}${"☆".repeat(3 - stars)}  ${tr(`${moves} moves (target ${par})`)}\n${runs}${usedHint ? " · 💡" : ""}\n${st ? `🔥 ${tr(`${st}-day streak`)}\n` : ""}${STORE_URL}`;
   }
   async function shareText(text) {
     try {
@@ -2389,8 +2748,8 @@ const DAILY_DATA = [{"map":["#######","###.E.#","###...#","#b#...#","#.#B###","#
       const n = dayNum(key) - DAILY_EPOCH + 1;
       const streakAlive = d0.streak && d0.lastDay && dayNum(key) - dayNum(d0.lastDay) === 1;
       list.push(streakAlive
-        ? { id: 100 + k, at: at.getTime(), title: `Keep your ${d0.streak}-day streak 🔥`, body: `Daily #${n} is ready. One puzzle keeps it going.` }
-        : { id: 100 + k, at: at.getTime(), title: REMIND_TEXT[(n + k) % REMIND_TEXT.length], body: `Echo · Daily #${n}` });
+        ? { id: 100 + k, at: at.getTime(), title: tr(`Keep your ${d0.streak}-day streak 🔥`), body: tr(`Daily #${n} is ready. One puzzle keeps it going.`) }
+        : { id: 100 + k, at: at.getTime(), title: tr(REMIND_TEXT[(n + k) % REMIND_TEXT.length]), body: tr(`Echo · Daily #${n}`) });
       if (list.length >= 7) break;
     }
     NATIVE.notify.schedule(list);
@@ -2639,6 +2998,7 @@ const DAILY_DATA = [{"map":["#######","###.E.#","###...#","#b#...#","#.#B###","#
     c.beginPath(); c.moveTo(X - w * 0.22, Y - w * 0.2); c.lineTo(X + w * 0.22, Y + w * 0.2); c.stroke();
   }
   function hintLabel(text, x, y) {
+    text = tr(text);
     ctx.font = `800 ${Math.max(10, Math.round(Math.min(W, H) * 0.03))}px ${cssv("--font-ui")}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const w = ctx.measureText(text).width + 14, h = Math.max(18, Math.min(W, H) * 0.05);
     ctx.fillStyle = "rgba(255,196,107,0.95)"; rr(x - w / 2, y - h / 2, w, h, h / 2); ctx.fill();
